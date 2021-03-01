@@ -1,0 +1,332 @@
+
+"""
+Created on Saturday Feb 27 2021
+
+@authors: Lucas Wright
+for help check this out:
+https://pyvisa.readthedocs.io/en/latest/introduction/example.html
+"""
+
+#--------------------------------Library Imports------------------------------#
+
+from PyQt5 import QtWidgets
+from PyQt5.QtCore import QTimer
+import sys
+import sr400_GUI
+import pyvisa
+import datetime
+import os
+import numpy as np
+import serial
+
+
+      
+#------------------------ Setting up Arduino Connectivity---------------------#
+#arduino = serial.Serial('COM6', 9600)
+#arduino.close()
+
+#--------------------------Setting Up GPIB Connectivity-----------------------#
+
+rm = visa.ResourceManager()
+instList = rm.list_resources()
+print(instList)
+
+#connecting to the instroments:
+photonCounter = rm.open_resorce('GPIB0::23::INSTR')
+micEmit = rm.open_resorce('GPIB0::27::INSTR')
+    
+#Ask for identification number:   
+print(photonCounter.query("*IDN?"))
+
+#functions for preping the instroments for taking data:
+interval_in_ms = 500
+num_of_redings = 100
+photonCounter.write("stuff here for the set up")
+micEmit.write("stuff here for the set up")
+
+# Here we will write a function that collects data.
+def collectData(freq_width, centered_freq, num_of_readings, legnth_of_collection):
+    #create a list of the frequencies we are testing in random order
+    #run a loop through that list that captures the flourenecy at those intervals.
+    #add that data point to the list dataList
+    return (dataList)
+
+def plot_data(dataList):
+    #plot the data real quick
+    return
+def saveData_CV;
+    #quick things to save the data to a CV
+    return
+
+
+
+#--------------------------Data File Functionality----------------------------#
+                          
+                           #__Defining Variables__#
+global temp
+
+#This line formats the categories of the data for a text file.
+Header = "Time (s), Total Counts, Rate (counts/s), \n\n"
+
+
+#L = long, S = short
+DateL = datetime.date.today().isoformat()      # = yyyy-mm-dd
+DateS = DateL[2:3] + DateL[5:6] + DateL[8:9]   # = y[2:3]mmdd
+
+TimeL = str(datetime.datetime.now().time())         
+#this version of windows does not allow you to save a file with ":" in its title,
+# so i had to replace all the colons with semi-colons.
+TimeS = TimeL[0:2] + ";" + TimeL[3:5] + ";" + TimeL[6:8]
+
+
+#This function is called by Update().                                          
+def AddData(dataTimes, counts, rates):                                          
+    """Given three lists of the same length, add all the data to data file"""
+    for entry in range(len(dataTimes)):
+        
+        DataString = (str(dataTimes[entry]) + ",   " + str(counts[entry]) +
+                      ",   " + str(rates[entry]) + "\n")                        
+        # writes datastring into tempporary data file
+        temp.write(DataString)                                                                        
+    
+
+#This function is called by Stop_fxn().
+def FileSave(RunCount):        
+    temp.close()
+    print("Here is your file: \n\n")
+    #reads the data just saved into our temporary data file
+    data = open(tempFileName).read()
+    print(data)
+    #Done to ensure temp can be properly accessed and deleted now that it
+    #isn't necessary anymore.
+    print("\nYour file has been successfully saved!")
+
+
+#----------------------------Establishing Variables---------------------------#
+class MainApp(microwave_GUI.Ui_Form):
+    
+    
+#lists and variables-:
+    #the current time in secons
+    curTimeVal = 0
+    #list of all the count rates
+    Ratelst= [] #
+    #list of all the times where collection of data occurs
+    Timelst=[]
+    #list of all the counts
+    Countlst = []
+    #average rate
+    average = 0
+    #standard deviation of average rate
+    StDev = 0
+    #standard error of average rate
+    StErr = 0
+    #Counter parameters controlled by GUI
+    TimeInt = 0
+    #Tallies number of measurement periods in current session
+    RunCount = 0   
+    #ask for the current period (1-2000) -> should = 1 here
+    curPeriod= int(photonCounter.query("NN"))
+    print(curPeriod)
+    
+    scrollWidth = 0 #the width of the x axis (in s) when graph scrolls
+    scaleWidth = 20 #the width of the x axis (in s) when graph scales
+    scrollCounter = 1   #keeps track of the window scroll number
+    lag = 0 #the number of times lag has occured in a row
+    
+    #Threshold parameter controlled by GUI
+    Threshold = 0 
+     #this is where we tie the buttons to the fxns 
+    def __init__(self, parent=None):
+        super(self.__class__, self).__init__(parent)
+    
+        #button connections to functions
+        self.StartBtn.clicked.connect(self.Start_fxn)
+        self.StopBtn.clicked.connect(self.Stop_fxn)
+        
+        #enable/disable start and stop buttons
+        self.StopBtn.setEnabled(False)
+        self.StartBtn.setEnabled(True)
+        
+        #QTimer to update and call for data
+        self.graphTimer = QTimer()
+        self.graphTimer.setSingleShot(False)
+        self.graphTimer.timeout.connect(self.Update)
+        
+        
+#--------------Formatting Functions-------------------------------------------#
+    def TSETtoFloat(self, text):
+        #converts a string of the form NUMeNUM to an float
+        return float(text)
+    
+    
+#--------------------------GUI Widget Functions-------------------------------#
+    def TSET_fxn(self):
+        """gets the time value from the textbox and sets it as the sr400 time
+           and sets an instance variable to hold that value"""
+        #get value and assert it's in correct form
+        TSETText = self.TSETBox.toPlainText()
+        #this has to do with the syntax or the sr400 commands,1E7 = 1second
+        TSET = str(self.TSETtoFloat(TSETText) * 10**7)
+        #convert string to proper float and add dwell time
+        self.TimeInt = self.TSETtoFloat(TSETText) + 0.002
+        #set the width of the graph to be 50 times longer than the selected 
+        #time bin time
+        self.scrollWidth = ((self.TimeInt-.002)* 50)
+        
+        #set the sr400 to that time period
+        photonCounter.write('CP2, ' + TSET)
+    
+            
+        #this will need some changing for sending the right data to be saved
+    def Stop_fxn(self):
+        """stops the data collection, commands data to be saved, 
+            closes serial communications"""
+        #stop button gets dissablec after being clicked, start button gets enabled    
+        self.StopBtn.setEnabled(False)
+        self.StartBtn.setEnabled(True)
+        #scale checkbox begs enabled
+        self.checkBox1.setEnabled(True)
+        #tells graphtimer to stop
+        self.graphTimer.stop()
+        #tells Photon counter to stop counting, reset data and tracking variables
+        photonCounter.write('cr')
+        #resets photon counter to factory settings 
+        #(needed just in case a hardware issuephoton counter such as not 
+        #turning on APD causes the SR400 to bug out)
+        photonCounter.write('cl')
+        
+        #if you select to save the data, once you click the stop button,
+        if self.checkBox.isChecked():
+            #set up a folder in savedData to store our file in
+            self.FileSetup()
+            #add our data to a temporary file
+            AddData(self.Timelst, self.Countlst, self.Ratelst)
+            #save that temporary file
+            FileSave(self.RunCount)
+        #if you didnt select to save your data, say that    
+        else:
+            print("")
+            print("you did not save your data")
+            
+        
+        #reset lists, so that old data is not stored in them during next measurement
+        self.Ratelst = []
+        self.Timelst = []
+        self.Countlst = []
+        
+     #this will need to change to accout for the MicEmit   
+    def Start_fxn(self):
+        """starts the data collection"""
+        #reset data and tracking variables
+        photonCounter.write('cr')
+        
+        self.TSET_fxn() 
+        self.curTimeVal = 0
+         
+        #clear graph and reset window range. this depends on if your want to scale or scroll.
+        self.rvtGraph.clear()
+        if self.checkBox1.isChecked():
+            self.rvtGraph.setXRange(0, self.scaleWidth)
+        else: 
+            self.rvtGraph.setXRange(0, int(self.scrollWidth))
+
+        #reset data and tracking variables
+        self.TSET_fxn() 
+        self.curTimeVal = 0
+        self.scrollCounter = 1
+        
+        #enable/disable start and stop buttons
+        self.StopBtn.setEnabled(True)
+        self.StartBtn.setEnabled(False)
+        #scale checkbox disabled
+        self.checkBox1.setEnabled(False)
+       
+        #sets dwell time, 
+        photonCounter.write("DT 2E-3")
+        #set number of periods (aka time bins)
+        photonCounter.write("NP 2000")
+        #When the number of time bins (Nperiods) reaches its maximum of 2000, 
+        #reset to 0 and continue measuring 
+        photonCounter.write("NE 1")
+        #ask for the current period (1-2000) -> should = 1 here
+        self.curPeriod= int(photonCounter.query("NN"))
+       
+        #start counter        
+        photonCounter.write("cs")
+        #starts the QTimer at timeInt, already includes 2ms dwell time
+        self.graphTimer.start((self.TimeInt) * 1000)
+        
+    #very important
+    def FileSetup(self):
+        """sets up files"""
+        TimeL = str(datetime.datetime.now().time())
+        #this version of windows does not allow you to save a file with ":" in its title,
+        # so i had to replace all the colons with semi-colons.
+        TimeS = TimeL[0:2] + ";" + TimeL[3:5] + ";" + TimeL[6:8]
+        folder = DateL + "_" + TimeS + "_SavedData"  
+        #The directory FileName goes in, look in SavedData folder in documents!
+        saveDir = "C:/Users/HorowitzLab/Documents/SavedData/" + folder 
+        os.makedirs(saveDir)
+        os.chdir(saveDir)
+        self.RunCount += 1
+        global tempFileName 
+        tempFileName = (DateS + "_Data_" + TimeS + ".csv")
+        global temp
+        temp = open(tempFileName, "w+")
+        temp.write(Header)
+    
+    #this gathers data ino a list. we will need to change to data being stored here
+    def Update(self):
+        """gets current count and updates instance variables"""
+        #create list holders for times and rates
+        countVals = []
+        timeVals = []
+        rateVals = []
+        
+        #ask SR400 to give current Nperiod number
+        self.curPeriod= int(photonCounter.query("NN"))
+        #ask SR400 to give the photon count
+        data = int(photonCounter.query("QA " + str(self.curPeriod))) 
+        
+        #get data: continually ask for i-th point until not -1, add to list
+        #poll for data until get -1
+        while (data > -1):
+           
+            #add to list, update other vals
+            countVals.append(data)
+            self.curTimeVal += self.TimeInt
+            self.curTimeVal = round(self.curTimeVal, 3)
+            #print(self.curTimeVal)
+            timeVals.append(self.curTimeVal)
+            #print(timeVals)
+            rateVals.append(round(data / (self.TimeInt-0.002), 1))
+            
+            #at small time bins (> 0.2sec), the code will try to catch up to the measurements being taken
+            # and produce a rateVals with multiple measurements, with only the last one being new data.
+            #this if else loop ensures that this lag doesnt interfere with data collection
+            if len(rateVals) > 1: 
+                self.Ratelst.append(rateVals[-1])
+                self.Countlst.append(countVals[-1])
+                self.Timelst.append(round(self.curTimeVal,3))
+            else:  
+                self.Ratelst.append(rateVals[0])
+                self.Timelst.append(round(timeVals[0],3))
+                self.Countlst.append(countVals[0])
+            
+            #calculates the avg, stdv, sterr and appends them to their respective lists 
+            self.average = round(sum(self.Ratelst)/len(self.Ratelst), 1)
+            self.StDev = round(np.std(self.Ratelst), 0)
+            self.StErr = round( self.StDev / np.sqrt(len(self.Ratelst)), 0)
+
+            #increase curPeriod, query for next data point
+            self.curPeriod += 1
+            data = int(photonCounter.query("QA " + str(self.curPeriod)))
+        
+def main():
+    app = QtWidgets.QApplication(sys.argv)
+    window = QtWidgets.QWidget()
+    form = MainApp(window)
+    app.exec_()
+
+main()
